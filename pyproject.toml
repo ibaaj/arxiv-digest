@@ -9,7 +9,7 @@ description = "A configurable daily digest of new arXiv papers, with optional LL
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "ibaaj"]
+authors = [{ name = "ibaaj"}]
 keywords = ["arxiv", "research", "digest", "rss", "openai"]
 classifiers = [
   "Development Status :: 4 - Beta",
