@@ -164,7 +164,7 @@ final_score >= final_keep_threshold
 Python 3.11 or later is required.
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ibaaj/arxiv-digest
 cd arxiv-digest
 
 python -m venv .venv
