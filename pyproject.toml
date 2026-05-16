@@ -9,7 +9,7 @@ description = "A configurable daily digest of new arXiv papers, with optional LL
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Your Name", email = "you@example.com" }]
+authors = [{ name = "ibaaj"]
 keywords = ["arxiv", "research", "digest", "rss", "openai"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -35,8 +35,8 @@ dev = [
 arxiv-digest = "arxiv_digest.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-username/arxiv-digest"
-Issues = "https://github.com/your-username/arxiv-digest/issues"
+Homepage = "https://github.com/ibaaj/arxiv-digest"
+Issues = "https://github.com/ibaaj/arxiv-digest/issues"
 
 [tool.setuptools.packages.find]
 include = ["arxiv_digest*"]
