@@ -1,0 +1,8 @@
+# Runtime requirements (no optional LLM dependency).
+# For LLM reranking, additionally install:
+#     pip install 'openai>=1.0.0'
+# Or use the optional extra:
+#     pip install -e '.[llm]'
+
+# The package itself currently has no runtime third-party dependencies
+# beyond the Python standard library (3.11+, which provides tomllib).

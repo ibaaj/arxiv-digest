@@ -1,0 +1,101 @@
+# Byte-compiled / optimized Python files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python build artifacts
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Installer and package manager metadata
+pip-log.txt
+pip-delete-this-directory.txt
+poetry.lock
+Pipfile.lock
+
+# Test, lint, type-check, and coverage outputs
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.cover
+*.py,cover
+.cache/
+
+# Jupyter / notebooks
+.ipynb_checkpoints/
+
+# Local project configuration
+# Keep examples/config.example.toml under version control.
+config.toml
+config.local.toml
+config.private.toml
+*.local.toml
+
+# Secrets and environment variables
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# arxiv-digest runtime state and generated reports
+data/
+output/
+*.db
+*.sqlite
+*.sqlite3
+digest.log
+logs/
+*.log
+
+# Demo scratch files
+tmp/
+temp/
+.cache-arxiv-digest/
+
+# Operating-system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

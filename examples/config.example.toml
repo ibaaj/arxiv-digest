@@ -1,0 +1,161 @@
+# Example configuration: a daily arXiv digest for
+# "Reinforcement Learning for Robotics".
+#
+# This is a worked example. Copy it to `config.toml` and edit the
+# lexicon, authors, and thresholds for your own topic.
+
+[app]
+title = "RL for Robotics — arXiv Digest"
+state_db = "data/state.db"
+# arXiv asks for a real contact email in the User-Agent.
+user_agent = "arxiv-digest/0.3 (you@example.com)"
+
+[arxiv]
+# Which arXiv categories to scan.
+categories = ["cs.AI", "cs.LG", "cs.RO"]
+
+# Lookback for the very first run (no prior state).
+initial_lookback_days = 3
+
+# How far before the last successful run we re-query the API, to absorb
+# the lag between submission and indexing.
+resume_overlap_minutes = 90
+
+# Politeness pauses between HTTP calls.
+rss_pause_seconds = 5.0
+api_pause_seconds = 5.0
+api_page_size = 100
+
+[filters]
+# Exact-name mute list. Names are matched case-insensitively after light
+# normalization (hyphens and underscores treated as spaces). Empty by
+# default.
+blocked_authors_exact = []
+
+# Authors you want to surface even if their abstract is light on
+# keywords. Empty in this neutral example.
+preferred_authors = []
+
+# Tiered keyword lexicon.
+#
+# - "strong": clearly in-topic terms; each hit adds +4 to the score.
+# - "medium": adjacent or supporting terms; each hit adds +2.
+# - "weak":   bridge terms; each hit adds +1, capped at +4 total.
+# - "negative": penalty terms; each hit subtracts 4.
+#
+# Matching is on the normalized lowercase text of the title and
+# abstract, treating "-" and "_" as spaces, so "sim-to-real" matches
+# "sim to real".
+positive_keywords_strong = [
+  "reinforcement learning for robotics",
+  "robot learning",
+  "sim-to-real",
+  "sim to real",
+  "manipulation policy",
+  "robotic manipulation",
+  "dexterous manipulation",
+  "policy distillation for robots",
+  "model-based reinforcement learning for robots",
+  "real-world robot learning",
+]
+
+positive_keywords_medium = [
+  "imitation learning",
+  "behavior cloning",
+  "policy optimization",
+  "actor-critic",
+  "model predictive control",
+  "trajectory optimization",
+  "domain randomization",
+  "tactile sensing",
+  "visuomotor policy",
+  "humanoid control",
+  "legged locomotion",
+  "quadruped",
+  "grasping",
+]
+
+positive_keywords_weak = [
+  "robot",
+  "manipulation",
+  "policy",
+  "control",
+  "reward shaping",
+  "exploration",
+  "offline reinforcement learning",
+]
+
+negative_keywords = [
+  "text-to-image",
+  "image generation",
+  "video generation",
+  "speech synthesis",
+  "speech recognition",
+  "stock prediction",
+  "ad recommendation",
+  "audio codec",
+]
+
+# Local score floor that makes a paper eligible for the LLM pass.
+broad_candidate_threshold = 0
+
+# If the LLM pass is disabled, this is the final keep threshold.
+local_keep_threshold = 6
+
+# Combined score when the LLM pass is enabled:
+#   final_score = local_weight * local_score + llm_weight * llm_score
+local_weight = 1.0
+llm_weight = 0.35
+final_keep_threshold = 25
+
+[llm]
+# When false, the LLM pass is skipped entirely and the local score
+# alone decides keep/drop. The script still runs end-to-end.
+enabled = false
+
+# Which environment variable holds the OpenAI API key.
+api_key_env = "OPENAI_API_KEY"
+
+# Which OpenAI model to use. Replace with whichever model you have
+# access to; the script does not assume any specific model name.
+model = "gpt-4o-mini"
+
+# "responses" uses the OpenAI Responses API; "chat" uses chat
+# completions with JSON-object response format.
+api = "responses"
+
+# Cap on how many top local candidates are sent to the LLM.
+max_candidates = 100
+
+# Used only for the pre-call cost estimate; actual usage from the API
+# response is reported separately.
+estimated_output_tokens_per_paper = 40
+input_price_per_million = 2.50
+output_price_per_million = 15.00
+
+# Topic description for the reranker. This is the only place the topic
+# is hardcoded — change this when you change the keyword lexicon. The
+# config also forwards the keyword lists to the model as context.
+system_prompt = """
+You filter arXiv papers for a reader interested in reinforcement
+learning applied to robotics: real-world robot learning, sim-to-real
+transfer, manipulation, locomotion, model-based RL for control, and
+imitation learning when used to train robot policies.
+
+Be strict. Down-rank papers that are purely about LLM agents, generic
+RL on game benchmarks with no robotic content, generic vision or
+speech, or hardware engineering with no learning component.
+
+Return JSON only, with shape:
+{"items": [
+  {"arxiv_id": str,
+   "score": int,         // 0..100, higher = more relevant
+   "decision": "keep" | "drop",
+   "why": str,           // under 18 words
+   "tags": [str, ...]    // at most 4 short strings
+  }
+]}
+"""
+
+[output]
+directory = "output"
