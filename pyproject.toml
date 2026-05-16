@@ -9,7 +9,7 @@ description = "A configurable daily digest of new arXiv papers, with optional LL
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "ibaaj"}]
+authors = [{ name = "ibaaj" }]
 keywords = ["arxiv", "research", "digest", "rss", "openai"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -54,11 +54,11 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM"]
 ignore = [
-  "E501",  # line length handled by formatter
+  "E501",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["B011"]  # allow assert False patterns
+"tests/**" = ["B011"]
 
 [tool.coverage.run]
 branch = true
