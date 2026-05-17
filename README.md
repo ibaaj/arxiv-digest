@@ -402,14 +402,7 @@ data/state.db
 
 `data/state.db` stores papers, scores, decisions, reasons, tags, run times, and the last successful run time.
 
-Do not commit local files such as:
 
-```text
-config.toml
-data/
-output/
-.env
-```
 
 ## Privacy and cost
 
