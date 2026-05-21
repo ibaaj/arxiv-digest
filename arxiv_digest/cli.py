@@ -8,6 +8,11 @@ Usage:
     python -m arxiv_digest --config config.toml --no-open
     python -m arxiv_digest --config config.toml --dry-run
     python -m arxiv_digest --config config.toml --since 2026-04-01T00:00:00Z
+
+If the arXiv API window fetch fails with a rate limit (429) or a
+transient server / network error, the run does not abort: it logs a
+warning, continues with whatever the RSS feeds returned, and leaves the
+resume point unchanged so the missed window is retried on the next run.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ import sys
 import webbrowser
 from datetime import timedelta
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 from .config import load_config
 from .db import DB
@@ -62,6 +68,11 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
+def _is_transient_http(exc: HTTPError) -> bool:
+    """A 429 or any 5xx is transient: worth degrading rather than aborting."""
+    return exc.code == 429 or 500 <= exc.code <= 599
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="arxiv-digest",
@@ -71,6 +82,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--since", default=None, help="Override resume point, ISO-8601 UTC")
     parser.add_argument("--no-open", action="store_true", help="Do not open the HTML digest in a browser")
     parser.add_argument("--dry-run", action="store_true", help="Do not update the last successful run state")
+    parser.add_argument(
+        "--no-api",
+        action="store_true",
+        help="Skip the arXiv API window fetch entirely and use RSS only",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     return parser
 
@@ -104,15 +120,42 @@ def main(argv: list[str] | None = None) -> int:
         )
         log.info("RSS fetched %d entries", len(rss_papers))
 
-        api_papers = fetch_api_window(
-            categories,
-            since_dt=query_since,
-            until_dt=now_dt,
-            user_agent=user_agent,
-            page_size=int(cfg["arxiv"].get("api_page_size", 100)),
-            pause_s=float(cfg["arxiv"].get("api_pause_seconds", 3.0)),
-        )
-        log.info("API fetched %d entries", len(api_papers))
+        # The API window fetch is the part that most often hits arXiv's
+        # rate limit. If it fails transiently (429 / 5xx / network), keep
+        # the RSS results rather than discarding the whole run.
+        api_papers: list = []
+        api_degraded = False
+        if args.no_api:
+            log.info("Skipping API window fetch (--no-api); using RSS only.")
+            api_degraded = True
+        else:
+            try:
+                api_papers = fetch_api_window(
+                    categories,
+                    since_dt=query_since,
+                    until_dt=now_dt,
+                    user_agent=user_agent,
+                    page_size=int(cfg["arxiv"].get("api_page_size", 100)),
+                    pause_s=float(cfg["arxiv"].get("api_pause_seconds", 3.0)),
+                )
+                log.info("API fetched %d entries", len(api_papers))
+            except HTTPError as exc:
+                if not _is_transient_http(exc):
+                    raise
+                api_degraded = True
+                log.warning(
+                    "arXiv API rate-limited or unavailable (HTTP %s); continuing "
+                    "with RSS results only. Resume point will not advance, so the "
+                    "missed window is retried on the next run.",
+                    exc.code,
+                )
+            except URLError as exc:
+                api_degraded = True
+                log.warning(
+                    "arXiv API network error (%s); continuing with RSS results "
+                    "only. Resume point will not advance.",
+                    exc,
+                )
 
         merged = merge_papers(rss_papers, api_papers)
         all_recent = filter_new_papers(merged, since_dt)
@@ -171,11 +214,28 @@ def main(argv: list[str] | None = None) -> int:
         stem = run_started.strftime("digest_%Y%m%d_%H%M%S")
         html_path = write_html(html, Path(cfg["output"].get("directory", "output")), stem)
 
-        if not args.dry_run:
+        # Only advance the resume point on a complete run. A degraded run
+        # (API skipped or rate-limited) must re-query the same window next
+        # time, or papers that exist only in the API window would be lost.
+        advanced = False
+        if not args.dry_run and not api_degraded:
             db.set_state("last_successful_run_utc", dt_to_iso(now_dt))
-        db.finish_run(run_id, "success", notes=f"wrote {html_path}")
+            advanced = True
+
+        status = "success" if not api_degraded else "partial"
+        note_bits = [f"wrote {html_path}"]
+        if api_degraded:
+            note_bits.append("API degraded; resume point held")
+        if not advanced and not api_degraded and args.dry_run:
+            note_bits.append("dry-run; resume point held")
+        db.finish_run(run_id, status, notes="; ".join(note_bits))
 
         log.info("Wrote digest: %s", html_path)
+        if api_degraded:
+            log.warning(
+                "Run completed in degraded mode (RSS only). Re-run later to "
+                "backfill the API window."
+            )
         kept_count = sum(1 for _, d, _ in decisions if d.decision == "keep")
         log.info(
             "Fetched %d | New %d | Kept %d | LLM reranked %d",
