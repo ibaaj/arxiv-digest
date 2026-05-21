@@ -20,6 +20,13 @@ The report contains paper titles, authors, categories, abstracts, scores, reason
 
 The screenshot shows a configuration for reinforcement learning in robotics. Other topics only require editing `config.toml`.
 
+Main commands: 
+```
+export OPENAI_API_KEY="..."
+python -m arxiv_digest --config config.toml -v --since 2026-XX-XXT00:00:00Z --no-api
+```
+where `2026-XX-XX` corresponds to yesterday. 
+
 ## Method
 
 The program uses two scoring stages.
