@@ -3,12 +3,16 @@
 We use the standard library only (``urllib``) so the package has no
 hard dependency beyond the optional OpenAI SDK. HTTP failures are
 retried with exponential backoff because the arXiv API occasionally
-returns 5xx under load.
+returns 5xx under load. When the server supplies a ``Retry-After``
+header (typical for 429 and 503), that delay is honored exactly;
+otherwise a jittered exponential backoff is used so that repeated or
+overlapping runs do not synchronize and re-trigger rate limiting.
 """
 
 from __future__ import annotations
 
 import logging
+import random
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -24,6 +28,7 @@ from .utils import (
     ensure_utc,
     parse_arxiv_id_from_abs_url,
     unique_preserve_order,
+    utcnow,
 )
 
 log = logging.getLogger(__name__)
@@ -43,19 +48,74 @@ NS = {
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
+def _parse_retry_after(exc: HTTPError) -> float | None:
+    """Return the ``Retry-After`` delay in seconds, or ``None`` if absent.
+
+    ``Retry-After`` may be either an integer number of seconds or an
+    HTTP-date. For an HTTP-date we compute the remaining seconds from
+    now and clamp at zero (a date in the past means "retry now").
+    """
+    value = exc.headers.get("Retry-After") if exc.headers else None
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    delay = (ensure_utc(when) - utcnow()).total_seconds()
+    return max(delay, 0.0)
+
+
+# When a 429 arrives without a Retry-After header, arXiv still wants us to
+# slow down substantially. Use this as a floor so we do not retry too soon.
+_RATE_LIMIT_MIN_DELAY_S = 10.0
+
+
+def _backoff_delay(
+    attempt: int, base_s: float, max_s: float, rng: random.Random
+) -> float:
+    """Exponential backoff with equal jitter, capped at ``max_s``.
+
+    Equal jitter (half the computed delay plus a uniform draw over the
+    other half) spreads retries across clients to break synchronization,
+    while guaranteeing the wait is never less than half the intended
+    backoff. Full jitter was rejected because it can draw a near-zero
+    delay and effectively hammer the server on the very retry where a
+    long wait matters most.
+    """
+    raw = min(base_s * (2 ** attempt), max_s)
+    half = raw / 2.0
+    return half + rng.uniform(0.0, half)
+
+
 def http_get_text(
     url: str,
     user_agent: str,
     timeout_s: int = 30,
-    max_attempts: int = 4,
-    backoff_base_s: float = 2.0,
+    max_attempts: int = 5,
+    backoff_base_s: float = 3.0,
+    max_backoff_s: float = 60.0,
     sleep: Callable[[float], None] = time.sleep,
+    rng: random.Random | None = None,
 ) -> str:
     """GET a URL as text with retry on transient failures.
 
     Retries on ``URLError`` (DNS/network) and HTTP status codes in
-    ``_RETRY_STATUS``. Delay between attempts is ``backoff_base_s * 2**n``.
+    ``_RETRY_STATUS``. On a retryable HTTP error the server's
+    ``Retry-After`` header is honored when present; otherwise the delay
+    is ``backoff_base_s * 2**n`` with full jitter, capped at
+    ``max_backoff_s``. Network errors use the same jittered backoff
+    (there is no server header to honor in that case).
+
+    ``sleep`` and ``rng`` are injectable so the retry logic can be
+    tested without real delays or randomness.
     """
+    rng = rng or random.Random()
     req = Request(url, headers={"User-Agent": user_agent})
     last_exc: Exception | None = None
     for attempt in range(max_attempts):
@@ -66,10 +126,18 @@ def http_get_text(
         except HTTPError as exc:
             last_exc = exc
             if exc.code in _RETRY_STATUS and attempt < max_attempts - 1:
-                delay = backoff_base_s * (2 ** attempt)
+                retry_after = _parse_retry_after(exc)
+                if retry_after is not None:
+                    delay = retry_after
+                else:
+                    delay = _backoff_delay(attempt, backoff_base_s, max_backoff_s, rng)
+                    # A 429 without a header still means "slow down a lot".
+                    if exc.code == 429:
+                        delay = max(delay, _RATE_LIMIT_MIN_DELAY_S)
                 log.warning(
-                    "HTTP %s on %s (attempt %d/%d); retrying in %.1fs",
+                    "HTTP %s on %s (attempt %d/%d); retrying in %.1fs%s",
                     exc.code, url, attempt + 1, max_attempts, delay,
+                    " (Retry-After)" if retry_after is not None else "",
                 )
                 sleep(delay)
                 continue
@@ -77,7 +145,7 @@ def http_get_text(
         except URLError as exc:
             last_exc = exc
             if attempt < max_attempts - 1:
-                delay = backoff_base_s * (2 ** attempt)
+                delay = _backoff_delay(attempt, backoff_base_s, max_backoff_s, rng)
                 log.warning(
                     "Network error on %s (attempt %d/%d): %s; retrying in %.1fs",
                     url, attempt + 1, max_attempts, exc, delay,
